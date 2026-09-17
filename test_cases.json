@@ -1,0 +1,27 @@
+[
+  {
+    "id": 1,
+    "request": "I forgot my password and cannot log into my account.",
+    "expected_category": "Account Access"
+  },
+  {
+    "id": 2,
+    "request": "My laptop won't connect to Wi-Fi.",
+    "expected_category": "Network"
+  },
+  {
+    "id": 3,
+    "request": "My keyboard has stopped working.",
+    "expected_category": "Hardware"
+  },
+  {
+    "id": 4,
+    "request": "I cannot install the software I need.",
+    "expected_category": "Software"
+  },
+  {
+    "id": 5,
+    "request": "My company email is not synchronizing.",
+    "expected_category": "Email"
+  }
+]

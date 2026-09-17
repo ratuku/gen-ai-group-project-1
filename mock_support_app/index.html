@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mock Support Ticket System</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="card">
+    <h1>Submit a Support Ticket</h1>
+
+    <form id="ticket-form" novalidate>
+      <label for="issue">Issue Description</label>
+      <textarea id="issue" name="issue" rows="4" placeholder="Describe the issue..." required></textarea>
+
+      <label for="category">Category</label>
+      <select id="category" name="category" required>
+        <option value="">Select a category</option>
+        <option value="account_access">Account Access</option>
+        <option value="hardware">Hardware</option>
+        <option value="software">Software</option>
+        <option value="network">Network</option>
+      </select>
+
+      <label for="resolution">Resolution Notes</label>
+      <textarea id="resolution" name="resolution" rows="3" placeholder="Resolution notes..." required></textarea>
+
+      <button type="submit" id="submit-ticket">Submit Ticket</button>
+    </form>
+
+    <div id="confirmation" class="hidden" role="status" aria-live="polite">
+      <h2>Ticket Submitted Successfully!</h2>
+      <p><strong>Ticket ID:</strong> <span id="ticket-id"></span></p>
+      <p><strong>Category:</strong> <span id="ticket-category"></span></p>
+      <p><strong>Resolution:</strong> <span id="ticket-resolution"></span></p>
+      <button type="button" id="reset-form">Submit Another Ticket</button>
+    </div>
+
+    <div id="error" class="hidden" role="alert"></div>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

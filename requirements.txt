@@ -1,0 +1,11 @@
+#these are just examples, you may not have to use all of them!
+
+langchain
+langchain-community
+langchain-text-splitters
+faiss-cpu
+sentence-transformers
+playwright
+python-dotenv
+requests
+groq
