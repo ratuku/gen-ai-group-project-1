@@ -1,2 +1,13 @@
 .DS_Store
 .idea/
+.env
+
+# Ignore all Python virtual environments
+env/
+venv/
+.venv/
+*-env/
+
+# Python-generated cache files
+__pycache__/
+*.py[cod]
