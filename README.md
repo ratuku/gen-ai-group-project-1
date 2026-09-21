@@ -31,6 +31,24 @@ python -m requester.main
 
 Enter the password-reset issue from `test_cases.json` (case 1). The RAG pipeline currently returns a fixed category and resolution. The Requester sends them to the mock support app through Playwright and verifies the confirmation.
 
+## Specialist task API
+
+With the Specialist server running on `http://127.0.0.1:9999`, submit an issue with `POST /tasks`:
+
+```json
+{"issue": "I forgot my password and cannot log in."}
+```
+
+The server immediately responds with HTTP `202` and a unique task ID:
+
+```json
+{"task_id": "<uuid>", "status": "submitted"}
+```
+
+Poll `GET /tasks/{task_id}` for the latest status. A task moves from `submitted` to `working`, then to `completed` with a `result` containing `category` and `resolution`, or to `failed` with an `error`. An unknown task ID returns HTTP `404`; an invalid submission returns HTTP `400`.
+
+Tasks are stored in memory and disappear when the Specialist server restarts. The current Requester still uses the original A2A message endpoint; it has not yet been connected to this task API.
+
 ## Run tests
 
 ```bash
@@ -38,7 +56,7 @@ source proj1-env/bin/activate
 python -m unittest discover -s tests -v
 ```
 
-`unittest` is included with Python; no separate test package is needed. The suite checks the password-reset result, the Specialist A2A endpoint, the Requester handoff, and a real Playwright submission. Install Chromium using the setup command above before running the browser test.
+`unittest` is included with Python; no separate test package is needed. The suite checks the Specialist task API, the password-reset result, the original A2A endpoint, the Requester handoff, and a real Playwright submission. Install Chromium using the setup command above before running the browser test.
 
 ## Coding Standards
 
