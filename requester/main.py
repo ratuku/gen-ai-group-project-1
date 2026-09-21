@@ -7,15 +7,18 @@ from a2a.client import A2ACardResolver, ClientConfig, create_client
 from a2a.helpers import new_text_message
 from a2a.types import Role, SendMessageRequest
 
+from requester.inputs import InvalidUserRequest, receive_user_request
 from workflow.playwright_workflow import submit_ticket
 
 async def main():
     """Send a user issue to the Specialist and submit its result in the app."""
-    issue = input("Describe your issue: ").strip()
-
-    if not issue:
-        print("Please enter an issue.")
+    try:
+        request_plan = receive_user_request()
+    except InvalidUserRequest as error:
+        print(error)
         return
+
+    issue = request_plan.issue
 
     async with httpx.AsyncClient() as http_client:
         resolver = A2ACardResolver(
