@@ -31,6 +31,16 @@ python -m requester.main
 
 Enter the password-reset issue from `test_cases.json` (case 1). The RAG pipeline currently returns a fixed category and resolution. The Requester sends them to the mock support app through Playwright and verifies the confirmation.
 
+## Requester input design
+
+Requester Step 1 is implemented in `requester/inputs.py`. It prompts for a support
+issue, normalizes repeated whitespace, rejects blank, non-text, or excessively long
+input, and creates a `RequestPlan`. The plan records that the downstream Specialist
+must provide both a support `category` and a `resolution`, and it can produce the
+`{"issue": "..."}` payload used by the task API. Keeping input handling separate
+from transport and browser automation makes the boundary between the Requester
+steps explicit and independently testable.
+
 ## Specialist task API
 
 With the Specialist server running on `http://127.0.0.1:9999`, submit an issue with `POST /tasks`:
