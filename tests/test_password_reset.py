@@ -3,13 +3,14 @@
 import json
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import httpx
-from a2a.types import Message, Part, Role, StreamResponse
 
 from rag.pipeline import RagPipeline
+from requester.inputs import create_request_plan
+from requester.main import complete_request
 from specialist.server import app
 from workflow.playwright_workflow import submit_ticket
 
@@ -66,46 +67,24 @@ class PasswordResetSliceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["resolution"].strip())
 
     async def test_requester_passes_specialist_result_to_workflow(self):
-        """Requester forwards the original issue and parsed A2A result to Playwright."""
-        from requester import main as requester
+        """Requester polls the task API and forwards its result to Playwright."""
+        workflow = AsyncMock(return_value="12345")
+        expected_result = RagPipeline().resolve(PASSWORD_CASE["request"])
+        transport = httpx.ASGITransport(app=app)
+        plan = create_request_plan(PASSWORD_CASE["request"])
 
-        message = Message(
-            message_id=str(uuid4()),
-            role=Role.ROLE_AGENT,
-            parts=[Part(text=json.dumps(SAMPLE_RESULT))],
-        )
-        response = StreamResponse(message=message)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
+            ticket_id = await complete_request(
+                plan,
+                client,
+                ticket_submitter=workflow,
+            )
 
-        class FakeClient:
-            """Return one Specialist message without opening a network connection."""
-
-            def send_message(self, request):
-                """Check the outgoing issue and yield the fixed Specialist response."""
-                sent_issue = request.message.parts[0].text
-                if sent_issue != PASSWORD_CASE["request"]:
-                    raise AssertionError(f"Wrong issue sent: {sent_issue}")
-
-                async def reply():
-                    """Yield the A2A response in the SDK client shape."""
-                    yield response
-
-                return reply()
-
-            async def close(self):
-                """Match the SDK client's cleanup interface."""
-                return None
-
-        resolver = AsyncMock()
-        resolver.get_agent_card.return_value = object()
-        with (
-            patch("builtins.input", return_value=PASSWORD_CASE["request"]),
-            patch.object(requester, "A2ACardResolver", return_value=resolver),
-            patch.object(requester, "create_client", new=AsyncMock(return_value=FakeClient())),
-            patch.object(requester, "submit_ticket", new=AsyncMock(return_value="12345")) as workflow,
-        ):
-            await requester.main()
-
-        workflow.assert_awaited_once_with(PASSWORD_CASE["request"], SAMPLE_RESULT)
+        self.assertEqual(ticket_id, "12345")
+        workflow.assert_awaited_once_with(PASSWORD_CASE["request"], expected_result)
 
     async def test_playwright_submits_and_verifies_ticket(self):
         """A real browser submits case 1 to the mock app and receives a ticket ID."""

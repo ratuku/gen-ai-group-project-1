@@ -1,53 +1,45 @@
-import httpx
 import asyncio
-import json
+from collections.abc import Awaitable, Callable
 
-# A2A Protocol
-from a2a.client import A2ACardResolver, ClientConfig, create_client
-from a2a.helpers import new_text_message
-from a2a.types import Role, SendMessageRequest
+import httpx
 
-from requester.inputs import InvalidUserRequest, receive_user_request
+from requester.inputs import InvalidUserRequest, RequestPlan, receive_user_request
+from requester.task_client import SpecialistTaskError, request_specialist_result
 from workflow.playwright_workflow import submit_ticket
 
-async def main():
-    """Send a user issue to the Specialist and submit its result in the app."""
+
+SPECIALIST_URL = "http://127.0.0.1:9999"
+
+
+async def complete_request(
+    plan: RequestPlan,
+    client: httpx.AsyncClient,
+    *,
+    ticket_submitter: Callable[[str, dict], Awaitable[str]] | None = None,
+) -> str:
+    """Complete Requester Steps 2 and 3 for one validated request plan."""
+    result = await request_specialist_result(client, plan.to_task_payload())
+    print(f"Specialist returned: {result}")
+    submitter = submit_ticket if ticket_submitter is None else ticket_submitter
+    return await submitter(plan.issue, result)
+
+
+async def main() -> None:
+    """Submit a user issue to the Specialist, then create the support ticket."""
     try:
-        request_plan = receive_user_request()
+        plan = receive_user_request()
     except InvalidUserRequest as error:
         print(error)
         return
 
-    issue = request_plan.issue
-
-    async with httpx.AsyncClient() as http_client:
-        resolver = A2ACardResolver(
-            httpx_client=http_client,
-            base_url="http://127.0.0.1:9999"
-        )
-        card = await resolver.get_agent_card()
-
-    client = await create_client(
-        agent=card,
-        client_config=ClientConfig(streaming=False)
-    )
-
     try:
-        request = SendMessageRequest(
-            message=new_text_message(issue, role=Role.ROLE_USER)
-        )
+        async with httpx.AsyncClient(base_url=SPECIALIST_URL) as client:
+            ticket_id = await complete_request(plan, client)
+    except (httpx.HTTPError, SpecialistTaskError) as error:
+        print(f"Request could not be completed: {error}")
+        return
 
-        async for response in client.send_message(request):
-            if response.HasField("message"):
-                result = json.loads(response.message.parts[0].text)
-                print(f"Specialist returned: {result}")
-
-                ticket_id = await submit_ticket(issue, result)
-                print(f"Ticket submitted and verified. ID: {ticket_id}")
-
-
-    finally:
-        await client.close()
+    print(f"Ticket submitted and verified. ID: {ticket_id}")
 
 
 if __name__ == "__main__":
