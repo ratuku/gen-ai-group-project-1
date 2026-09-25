@@ -81,7 +81,11 @@ The server immediately responds with HTTP `202` and a unique task ID:
 
 Poll `GET /tasks/{task_id}` for the latest status. A task moves from `submitted` to `working`, then to `completed` with a `result` containing `category` and `resolution`, or to `failed` with an `error`. An unknown task ID returns HTTP `404`; an invalid submission returns HTTP `400`.
 
-Tasks are stored in memory and disappear when the Specialist server restarts. The current Requester still uses the original A2A message endpoint; it has not yet been connected to this task API.
+Tasks are stored in memory and disappear when the Specialist server restarts. The
+Requester submits to this task API, polls while the status is `submitted` or
+`working`, validates the completed `category` and `resolution`, and only then
+starts the Playwright workflow. Failed tasks and tasks that exceed the Requester
+timeout are reported without submitting an invalid support ticket.
 
 ## Run tests
 
