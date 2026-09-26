@@ -11,3 +11,7 @@ venv/
 # Python-generated cache files
 __pycache__/
 *.py[cod]
+
+# Generated RAG vector-store artifacts
+rag/faiss_store/
+tests/.tmp_rag_ingestion_*/
