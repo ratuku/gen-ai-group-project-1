@@ -1,4 +1,4 @@
-  """Build a persistent semantic index from the Markdown knowledge base.
+"""Build a persistent semantic index from the Markdown knowledge base.
 
 This module is intentionally limited to ingestion. It loads source documents,
 splits them into chunks, creates semantic embeddings, and writes those vectors
