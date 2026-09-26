@@ -3,14 +3,15 @@
 import json
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock
-from uuid import uuid4
+from unittest.mock import AsyncMock, patch
 
 import httpx
+from a2a.client import A2ACardResolver, ClientConfig, create_client
 
 from rag.pipeline import RagPipeline
 from requester.inputs import create_request_plan
 from requester.main import complete_request
+from requester.task_client import SpecialistTaskFailed, request_specialist_result
 from specialist.server import app
 from workflow.playwright_workflow import submit_ticket
 
@@ -34,57 +35,107 @@ class PasswordResetSliceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["resolution"].strip())
 
     async def test_specialist_a2a_endpoint_returns_rag_result(self):
-        """An A2A SendMessage request reaches the Specialist and returns its result."""
+        """Agent Card discovery, submission, and polling return the RAG result."""
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-            card = await client.get("/.well-known/agent-card.json")
-            self.assertEqual(card.status_code, 200)
-            self.assertEqual(card.json()["name"], "Specialist")
-
-            response = await client.post(
-                "/",
-                headers={"A2A-Version": "1.0"},
-                json={
-                    "jsonrpc": "2.0",
-                    "id": "password-case-1",
-                    "method": "SendMessage",
-                    "params": {
-                        "message": {
-                            "messageId": str(uuid4()),
-                            "role": "ROLE_USER",
-                            "parts": [{"text": PASSWORD_CASE["request"]}],
-                        }
-                    },
-                },
+        http_client = httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        )
+        resolver = A2ACardResolver(
+            httpx_client=http_client,
+            base_url="http://testserver",
+        )
+        card = await resolver.get_agent_card()
+        self.assertEqual(card.name, "Specialist")
+        client = await create_client(
+            agent=card,
+            client_config=ClientConfig(
+                streaming=False,
+                polling=True,
+                httpx_client=http_client,
+            ),
+        )
+        try:
+            result = await request_specialist_result(
+                client,
+                PASSWORD_CASE["request"],
+                poll_interval=0,
             )
+        finally:
+            await client.close()
 
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertNotIn("error", body)
-        result = json.loads(body["result"]["message"]["parts"][0]["text"])
         self.assertEqual(result["category"], "account_access")
         self.assertIsInstance(result["resolution"], str)
         self.assertTrue(result["resolution"].strip())
 
     async def test_requester_passes_specialist_result_to_workflow(self):
-        """Requester polls the task API and forwards its result to Playwright."""
+        """Requester polls A2A and forwards the completed result to Playwright."""
         workflow = AsyncMock(return_value="12345")
         expected_result = RagPipeline().resolve(PASSWORD_CASE["request"])
         transport = httpx.ASGITransport(app=app)
         plan = create_request_plan(PASSWORD_CASE["request"])
-
-        async with httpx.AsyncClient(
+        http_client = httpx.AsyncClient(
             transport=transport,
             base_url="http://testserver",
-        ) as client:
+        )
+        resolver = A2ACardResolver(
+            httpx_client=http_client,
+            base_url="http://testserver",
+        )
+        card = await resolver.get_agent_card()
+        client = await create_client(
+            agent=card,
+            client_config=ClientConfig(
+                streaming=False,
+                polling=True,
+                httpx_client=http_client,
+            ),
+        )
+        try:
             ticket_id = await complete_request(
                 plan,
                 client,
                 ticket_submitter=workflow,
             )
+        finally:
+            await client.close()
 
         self.assertEqual(ticket_id, "12345")
         workflow.assert_awaited_once_with(PASSWORD_CASE["request"], expected_result)
+
+    async def test_specialist_failure_is_returned_through_a2a(self):
+        """A RAG error becomes a failed A2A task visible to the Requester."""
+        transport = httpx.ASGITransport(app=app)
+        http_client = httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        )
+        resolver = A2ACardResolver(
+            httpx_client=http_client,
+            base_url="http://testserver",
+        )
+        card = await resolver.get_agent_card()
+        client = await create_client(
+            agent=card,
+            client_config=ClientConfig(
+                streaming=False,
+                polling=True,
+                httpx_client=http_client,
+            ),
+        )
+        try:
+            with patch(
+                "specialist.server.RagPipeline.resolve",
+                side_effect=RuntimeError("RAG unavailable"),
+            ):
+                with self.assertRaisesRegex(SpecialistTaskFailed, "RAG unavailable"):
+                    await request_specialist_result(
+                        client,
+                        PASSWORD_CASE["request"],
+                        poll_interval=0,
+                    )
+        finally:
+            await client.close()
 
     async def test_playwright_submits_and_verifies_ticket(self):
         """A real browser submits case 1 to the mock app and receives a ticket ID."""

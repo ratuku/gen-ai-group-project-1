@@ -16,8 +16,9 @@ from a2a.server.events import EventQueue
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
+from a2a.server.tasks.task_updater import TaskUpdater
 from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
-from a2a.types import Message, Part, Role
+from a2a.types import Part, Task, TaskState, TaskStatus
 
 
 # This in-memory store is deliberately small for the course project.  A
@@ -86,19 +87,34 @@ async def get_task(request: Request) -> JSONResponse:
 class SpecialistExecutor(AgentExecutor):
     """Handle A2A support requests using the RAG pipeline."""
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-        """Resolve the incoming issue and send its result as an A2A message."""
-        issue = context.message.parts[0].text
-        print(f"Specialist received: {issue}")
+        """Publish the complete asynchronous task lifecycle through A2A."""
+        if not context.task_id or not context.context_id:
+            raise RuntimeError("A2A task and context IDs are required.")
 
-        result = RagPipeline().resolve(issue)
-
-        return await event_queue.enqueue_event(
-            Message(
-                message_id=str(uuid4()),
-                role=Role.ROLE_AGENT,
-                parts=[Part(text=json.dumps(result))]
+        updater = TaskUpdater(event_queue, context.task_id, context.context_id)
+        await event_queue.enqueue_event(
+            Task(
+                id=context.task_id,
+                context_id=context.context_id,
+                status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED),
             )
         )
+        await updater.start_work()
+
+        issue = context.get_user_input()
+        print(f"Specialist received: {issue}")
+
+        try:
+            result = await asyncio.to_thread(RagPipeline().resolve, issue)
+            message = updater.new_agent_message(
+                [Part(text=json.dumps(result))]
+            )
+            await updater.complete(message)
+        except Exception as error:
+            message = updater.new_agent_message(
+                [Part(text=f"Specialist processing failed: {error}")]
+            )
+            await updater.failed(message)
 
     async def cancel(self, context, event_queue):
         """Report that task cancellation is not implemented for this demo."""
