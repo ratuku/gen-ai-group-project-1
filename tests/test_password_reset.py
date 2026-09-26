@@ -9,7 +9,6 @@ from uuid import uuid4
 import httpx
 from a2a.types import Message, Part, Role, StreamResponse
 
-from rag.pipeline import RagPipeline
 from specialist.server import app
 from workflow.playwright_workflow import submit_ticket
 
@@ -25,37 +24,34 @@ SAMPLE_RESULT = {
 class PasswordResetSliceTests(unittest.IsolatedAsyncioTestCase):
     """Protect the password-reset contract across RAG, A2A, and the app."""
 
-    def test_rag_returns_usable_password_reset_result(self):
-        """Case 1 gets the app category and a nonempty resolution."""
-        result = RagPipeline().resolve(PASSWORD_CASE["request"])
-        self.assertEqual(result["category"], "account_access")
-        self.assertIsInstance(result["resolution"], str)
-        self.assertTrue(result["resolution"].strip())
-
     async def test_specialist_a2a_endpoint_returns_rag_result(self):
         """An A2A SendMessage request reaches the Specialist and returns its result."""
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-            card = await client.get("/.well-known/agent-card.json")
-            self.assertEqual(card.status_code, 200)
-            self.assertEqual(card.json()["name"], "Specialist")
+        with patch("specialist.server.RagPipeline") as pipeline_class:
+            pipeline_class.return_value.resolve.return_value = SAMPLE_RESULT
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as client:
+                card = await client.get("/.well-known/agent-card.json")
+                self.assertEqual(card.status_code, 200)
+                self.assertEqual(card.json()["name"], "Specialist")
 
-            response = await client.post(
-                "/",
-                headers={"A2A-Version": "1.0"},
-                json={
-                    "jsonrpc": "2.0",
-                    "id": "password-case-1",
-                    "method": "SendMessage",
-                    "params": {
-                        "message": {
-                            "messageId": str(uuid4()),
-                            "role": "ROLE_USER",
-                            "parts": [{"text": PASSWORD_CASE["request"]}],
-                        }
+                response = await client.post(
+                    "/",
+                    headers={"A2A-Version": "1.0"},
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": "password-case-1",
+                        "method": "SendMessage",
+                        "params": {
+                            "message": {
+                                "messageId": str(uuid4()),
+                                "role": "ROLE_USER",
+                                "parts": [{"text": PASSWORD_CASE["request"]}],
+                            }
+                        },
                     },
-                },
-            )
+                )
 
         self.assertEqual(response.status_code, 200)
         body = response.json()

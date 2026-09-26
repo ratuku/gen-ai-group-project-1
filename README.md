@@ -9,9 +9,11 @@ python3 -m venv proj1-env
 source proj1-env/bin/activate
 python -m pip install -r requirements.txt
 python -m playwright install chromium
+cp .env.example .env
 ```
 
 Playwright needs the Chromium browser installed separately from its Python package.
+Set `GROQ_API_KEY` in `.env` before starting the Specialist.
 
 ## Run the current vertical slice
 
@@ -34,32 +36,9 @@ retrieves the most relevant procedure from the local knowledge base and returns
 its ticket category and resolution. The Requester sends them to the mock support
 app through Playwright and verifies the confirmation.
 
-## RAG pipeline: in-memory vector store
+## RAG pipeline
 
-RAG Step 1 is implemented in `rag/pipeline.py`. At startup, the pipeline loads
-every Markdown file in `knowledge_base/` and stores each procedure as a
-normalized vector in memory. Embeddings are produced with deterministic token
-hashing, so retrieval does not require an external database, API key, network
-connection, or model download.
-
-For each support request, the pipeline:
-
-1. Converts the request into a query vector.
-2. Compares it with all stored knowledge-base vectors using cosine similarity.
-3. Selects the most relevant procedure.
-4. Returns its `category` and `resolution` to the Specialist.
-
-Each knowledge-base document must contain `## Resolution` and
-`## Ticket Category` sections. These sections keep the retrieval result aligned
-with the existing Specialist and Playwright contract. Because the store is
-in-memory, it is rebuilt whenever a new `RagPipeline` instance is created and is
-not persisted between processes.
-
-## RAG ingestion: persistent semantic index
-
-Ticket #25 adds a separate ingestion pipeline without changing the application's
-current retrieval behavior. Run it from the project root after installing the
-requirements:
+Build the persistent semantic index before starting the Specialist:
 
 ```bash
 python -m rag.ingest_documents
@@ -93,9 +72,22 @@ per-source chunk index. A record has this shape:
 ```
 
 The array position in `chunks.json` is the corresponding vector position in
-`index.faiss`. The artifacts are generated and ignored by Git. Retrieval and
-passing retrieved context to an LLM are intentionally outside this ingestion
-step.
+`index.faiss`. The artifacts are generated and ignored by Git.
+
+For each support issue, `rag/pipeline.py` completes RAG steps 5-7:
+
+1. Embed the issue with the same sentence-transformer used during ingestion.
+2. Retrieve the three most similar chunks from FAISS.
+3. Render `rag/prompts/support_answer.poml` with the issue, retrieved chunks,
+   source filenames, and allowed ticket categories.
+4. Ask Groq for a schema-constrained JSON result using the Constrained and
+   Guided Generation technique.
+5. Validate the category, resolution, and cited sources before returning them
+   to the Specialist.
+
+The pipeline rejects invalid JSON, unsupported categories, invented source
+filenames, and responses that report insufficient context. The public
+`RagPipeline.resolve(issue)` method remains the boundary used by the Specialist.
 
 ## Requester input design
 
@@ -138,16 +130,11 @@ password-reset result, the original A2A endpoint, the Requester handoff, and a
 real Playwright submission. Install Chromium using the setup command above
 before running the browser test.
 
-To run only the RAG Step 1 tests:
+To run the ingestion and complete RAG pipeline tests without downloading an
+embedding model or calling Groq:
 
 ```bash
-python -m unittest tests.test_rag_vector_store -v
-```
-
-To run the persistent ingestion tests without downloading an embedding model:
-
-```bash
-python -m unittest tests.test_rag_ingestion -v
+python -m unittest tests.test_rag_ingestion tests.test_rag_pipeline -v
 ```
 
 ## Coding Standards

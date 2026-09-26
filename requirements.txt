@@ -9,6 +9,7 @@ playwright
 python-dotenv
 requests
 groq
+poml
 a2a-sdk[http-server]
 uvicorn
 httpx
