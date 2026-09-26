@@ -40,9 +40,20 @@ class A2ATaskApiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_completed_task_returns_rag_result_when_polled(self):
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-            acknowledgement = await self.submit(client)
-            result = await self.wait_for_terminal_status(client, acknowledgement["task_id"])
+        completed_result = {
+            "category": "account_access",
+            "resolution": "Verify identity and reset the password.",
+            "sources": ["password_reset.md"],
+        }
+        with patch("specialist.server.RagPipeline") as pipeline_class:
+            pipeline_class.return_value.resolve.return_value = completed_result
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as client:
+                acknowledgement = await self.submit(client)
+                result = await self.wait_for_terminal_status(
+                    client, acknowledgement["task_id"]
+                )
 
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["result"]["category"], "account_access")
@@ -57,7 +68,8 @@ class A2ATaskApiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_processing_error_becomes_failed_task(self):
         transport = httpx.ASGITransport(app=app)
-        with patch("specialist.server.RagPipeline.resolve", side_effect=RuntimeError("RAG unavailable")):
+        with patch("specialist.server.RagPipeline") as pipeline_class:
+            pipeline_class.return_value.resolve.side_effect = RuntimeError("RAG unavailable")
             async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
                 acknowledgement = await self.submit(client)
                 result = await self.wait_for_terminal_status(client, acknowledgement["task_id"])
