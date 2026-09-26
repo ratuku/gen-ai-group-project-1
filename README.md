@@ -55,6 +55,48 @@ with the existing Specialist and Playwright contract. Because the store is
 in-memory, it is rebuilt whenever a new `RagPipeline` instance is created and is
 not persisted between processes.
 
+## RAG ingestion: persistent semantic index
+
+Ticket #25 adds a separate ingestion pipeline without changing the application's
+current retrieval behavior. Run it from the project root after installing the
+requirements:
+
+```bash
+python -m rag.ingest_documents
+```
+
+The pipeline loads the Markdown files in `knowledge_base/`, splits them on
+Markdown-aware boundaries using an 800-character target and 100-character
+overlap, and embeds the chunks with
+`sentence-transformers/all-MiniLM-L6-v2`. The first run may download this model.
+It writes three generated files under `rag/faiss_store/`:
+
+- `index.faiss`: normalized 384-dimensional vectors in a FAISS `IndexFlatIP`.
+- `chunks.json`: chunk text and metadata in FAISS insertion order.
+- `manifest.json`: the schema version, model, dimensions, metric, and chunking
+  settings needed to consume the index.
+
+Each chunk preserves its source filename, normalized ticket category, and
+per-source chunk index. A record has this shape:
+
+```json
+{
+  "faiss_position": 0,
+  "id": "account_access.md:chunk:0000",
+  "text": "# Account Access ...",
+  "metadata": {
+    "source": "account_access.md",
+    "category": "account_access",
+    "chunk_index": 0
+  }
+}
+```
+
+The array position in `chunks.json` is the corresponding vector position in
+`index.faiss`. The artifacts are generated and ignored by Git. Retrieval and
+passing retrieved context to an LLM are intentionally outside this ingestion
+step.
+
 ## Requester input design
 
 Requester Step 1 is implemented in `requester/inputs.py`. It prompts for a support
@@ -100,6 +142,12 @@ To run only the RAG Step 1 tests:
 
 ```bash
 python -m unittest tests.test_rag_vector_store -v
+```
+
+To run the persistent ingestion tests without downloading an embedding model:
+
+```bash
+python -m unittest tests.test_rag_ingestion -v
 ```
 
 ## Coding Standards
