@@ -44,8 +44,8 @@ async def submit_ticket(
             shown_resolution = await page.locator("#ticket-resolution").inner_text()
             ticket_id = (await page.locator("#ticket-id").inner_text()).strip()
 
-            if shown_category != "Account Access":
-                raise RuntimeError(f"Wrong category shown: {shown_category}")
+            if shown_category != category:
+                raise RuntimeError(f"Wrong category shown: {shown_category} (Expected: {category})")
             if shown_resolution != resolution:
                 raise RuntimeError("Resolution shown does not match the Specialist result")
             if not re.fullmatch(r"\d{5}", ticket_id):
